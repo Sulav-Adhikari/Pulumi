@@ -1,40 +1,51 @@
 import pulumi
 import pulumi_aws as aws
 
-size = "t2.micro"
+# size = "t2.micro"
+# vpcid = "vpc-03e614bd20d610cc3"
 
-ami = aws.ec2.get_ami(
-    most_recent=True,
-    owners=["amazon"],
-    filters=[aws.ec2.GetAmiFilterArgs(name="name", values=["amzn2-ami-hvm-*"])],
+
+
+
+lambda_role = aws.iam.Role("SulavlambdaRole",
+    assume_role_policy="""{
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "lambda.amazonaws.com"
+            }
+        }]
+    }"""
+)
+# Attach the AWS Lambda Basic Execution Role policy to the role.
+lambda_exec_policy_attachment = aws.iam.RolePolicyAttachment("lambdaExecPolicyAttachment",
+    policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+    role=lambda_role.name
 )
 
-group = aws.ec2.SecurityGroup(
-    "web-secgrp",
-    description="Enable HTTP access",
-    ingress=[
-        aws.ec2.SecurityGroupIngressArgs(
-            protocol="tcp",
-            from_port=80,
-            to_port=80,
-            cidr_blocks=["0.0.0.0/0"],
-        )
-    ],
+lambda_function = aws.lambda_.Function(
+    "Sulav-lambda",
+    runtime="python3.9",
+    # Use the ARN of the IAM Role
+    role=lambda_role.arn, 
+    code=pulumi.FileArchive("./lamdaFunction/lamdafunction.zip"),
+    handler="lambda_function.my_handler",
+    tags={
+        "Name": "Sulav-lambda",
+        "Creator": "Sulav",
+        "Project": "Intern",
+        "Deletable": "yes"
+    }
 )
 
-user_data = """
-#!/bin/bash
-echo "Hello, World!" > index.html
-nohup python -m SimpleHTTPServer 80 &
-"""
-
-server = aws.ec2.Instance(
-    "web-server-www",
-    instance_type=size,
-    vpc_security_group_ids=[group.id],
-    user_data=user_data,
-    ami=ami.id,
+# Create a new Lambda Function URL
+lambda_function_url = aws.lambda_.FunctionUrl(
+    "Sulav-lambda-url",
+    function_name=lambda_function.name,
+    authorization_type="NONE"
 )
 
-pulumi.export("public_ip", server.public_ip)
-pulumi.export("public_dns", server.public_dns)
+pulumi.export('lambda_function_arn', lambda_function.arn)
+pulumi.export("lambda_function_url", lambda_function_url.function_url)
